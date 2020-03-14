@@ -2,6 +2,8 @@
 import sys
 import os
 import enum
+import socket
+from struct import *
 
 
 class TftpProcessor(object):
@@ -30,7 +32,12 @@ class TftpProcessor(object):
         Represents a TFTP packet type add the missing types here and
         modify the existing values as necessary.
         """
+        # read -> 1, write -> 2, data -> 3, ack -> 4, error -> 5
         RRQ = 1
+        WRQ = 2
+        DATA = 3
+        ACK = 4
+        ERROR = 5
 
     def __init__(self):
         """
@@ -38,6 +45,7 @@ class TftpProcessor(object):
         Do NOT change the arguments passed to this function.
         Here's an example of what you can do inside this function.
         """
+        
         self.packet_buffer = []
         pass
 
@@ -50,6 +58,7 @@ class TftpProcessor(object):
         # Add your logic here, after your logic is done,
         # add the packet to be sent to self.packet_buffer
         # feel free to remove this line
+
         print(f"Received a packet from {packet_source}")
         in_packet = self._parse_udp_packet(packet_data)
         out_packet = self._do_some_logic(in_packet)
@@ -63,6 +72,7 @@ class TftpProcessor(object):
         the type of the packet and extract other available
         information.
         """
+         # PACK OR UNPACK
         pass
 
     def _do_some_logic(self, input_packet):
@@ -70,6 +80,8 @@ class TftpProcessor(object):
         Example of a private function that does some logic.
         """
         pass
+
+
 
     def get_next_output_packet(self):
         """
@@ -100,6 +112,11 @@ class TftpProcessor(object):
         pass
 
     def upload_file(self, file_path_on_server):
+        '''2 bytes string 1 byte string 1 byte
+        --------------------------------------
+        | Opcode | Filename | 0 | Mode | 0 |
+        --------------------------------------
+         WRQ -> 02'''
         """
         This method is only valid if you're implementing
         a TFTP client, since the client requests or uploads
@@ -107,7 +124,59 @@ class TftpProcessor(object):
         accept is the file name. Remove this function if you're
         implementing a server.
         """
+        #PACKING
+        format = "!h" + str(len(file_path_on_server)) + "sB5sB"
+        print(self.TftpPacketType.WRQ.value)
+        packing = pack(format, self.TftpPacketType.WRQ.value, bytes(file_path_on_server, "ascii"), 0, bytes("octet", "ascii"), 0)
+        print(packing)
+        return packing
+
+    def upload_data(self, file):
+
         pass
+
+    def write(self, server_packet):
+        '''
+        2 bytes 2 bytes string 1 byte
+        -----------------------------------------
+        | Opcode | ErrorCode | ErrMsg | 0 |
+        -----------------------------------------
+        Figure 5-4: ERROR packet
+        '''
+        opcode = server_packet[:2]
+        unpacking = unpack("!h",opcode)
+        if unpacking[0] == 4:
+            self.ack(server_packet)
+            return 0
+        else:
+            self.error(server_packet)
+            return 1
+
+
+    def ack(self, server_packet):
+        unpacking = unpack("!hh", server_packet)
+        block_number = unpacking[1]
+        print(block_number)
+        return block_number
+
+    def error(self, server_packet):
+        unpacking = unpack("!hh", server_packet[:4])
+        if unpacking[2] == 0:
+            print("Not defined, see error message (if any).")
+        elif  unpacking[2] == 1:
+            print("File not found.")
+        elif unpacking[2] == 2:
+            print("Access violation.")
+        elif unpacking[2] == 3:
+            print("Disk full or allocation exceeded.")
+        elif unpacking[2] == 4:
+            print("Illegal TFTP operation.")
+        elif unpacking[2] == 5:
+            print("Unknown transfer ID.")
+        elif unpacking[2] == 6:
+            print("File already exists.")
+        elif unpacking[2] == 7:
+            print("No such user.")
 
 
 def check_file_name():
@@ -125,17 +194,43 @@ def setup_sockets(address):
     class. It knows nothing about the sockets.
     Feel free to delete this function.
     """
-    pass
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    print(client_socket)
+    return client_socket
 
 
-def do_socket_logic():
+def do_socket_logic(address, operation, client_socket, file_name):
     """
     Example function for some helper logic, in case you
     want to be tidy and avoid stuffing the main function.
     Feel free to delete this function.
     """
+    #
+    server_address = (address, 69)
+    if operation == "push":
+        uploading = upload(address, operation, client_socket, file_name, server_address)
+        #client_socket.send(uploading, server_address)
+    # TFTP.UPLOAD()
+    client_socket.sendto(b"Hello", server_address)
+    server_packet = client_socket.recvfrom(516)
+    #print("[CLIENT] IN", server_packet)
     pass
 
+
+def upload(address, operation, client_socket, file_name, server_address):
+    tftp = TftpProcessor()
+    wrq=tftp.upload_file(file_name)
+    client_socket.sendto(wrq, server_address)
+    print("[CLIENT] Done!")
+    server_packet , add= client_socket.recvfrom(516)
+    print("[CLIENT] IN", server_packet)
+    print(add[1])
+    uploading = tftp.write(server_packet)
+    print(uploading)
+    if uploading == 0:
+        file = open(file_name, "rb").read()
+        print(file)
+        tftp.upload_data(file)
 
 def parse_user_input(address, operation, file_name=None):
     # Your socket logic can go here,
@@ -144,8 +239,11 @@ def parse_user_input(address, operation, file_name=None):
     # But don't add socket code in the TftpProcessor class.
     # Feel free to delete this code as long as the
     # functionality is preserved.
+    print(operation)
+    client_socket = setup_sockets(address)
     if operation == "push":
         print(f"Attempting to upload [{file_name}]...")
+        do_socket_logic(address,operation, client_socket, file_name)
         pass
     elif operation == "pull":
         print(f"Attempting to download [{file_name}]...")
@@ -160,14 +258,14 @@ def get_arg(param_index, default=None):
         and terminates the program.
     """
     try:
+        print(sys.argv[param_index])
         return sys.argv[param_index]
     except IndexError as e:
         if default:
             return default
         else:
             print(e)
-            print(
-                f"[FATAL] The comamnd-line argument #[{param_index}] is missing")
+            print(f"[FATAL] The comamnd-line argument #[{param_index}] is missing")
             exit(-1)    # Program execution failed.
 
 
@@ -187,7 +285,7 @@ def main():
     # The IP of the server, some default values
     # are provided. Feel free to modify them.
     ip_address = get_arg(1, "127.0.0.1")
-    operation = get_arg(2, "pull")
+    operation = get_arg(2, "push")
     file_name = get_arg(3, "test.txt")
 
     # Modify this as needed.
