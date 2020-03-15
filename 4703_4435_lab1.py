@@ -45,9 +45,9 @@ class TftpProcessor(object):
         Do NOT change the arguments passed to this function.
         Here's an example of what you can do inside this function.
         """
-        
-        self.packet_buffer = []
         self.blocknumber = 1
+        self.last = -1
+        self.packet_buffer = []
         pass
 
     def process_udp_packet(self, packet_data, packet_source):
@@ -73,7 +73,7 @@ class TftpProcessor(object):
         the type of the packet and extract other available
         information.
         """
-         # PACK OR UNPACK
+        # PACK OR UNPACK
         pass
 
     def _do_some_logic(self, input_packet):
@@ -81,8 +81,6 @@ class TftpProcessor(object):
         Example of a private function that does some logic.
         """
         pass
-
-
 
     def get_next_output_packet(self):
         """
@@ -93,7 +91,9 @@ class TftpProcessor(object):
         s_socket.send(tftp_processor.get_next_output_packet())
         Leave this function as is.
         """
-        return self.packet_buffer.pop(0)
+        self.last = self.packet_buffer.pop(0)
+        print("self.last = ", self.last)
+        return self.last
 
     def has_pending_packets_to_be_sent(self):
         """
@@ -110,8 +110,11 @@ class TftpProcessor(object):
         accept is the file name. Remove this function if you're
         implementing a server.
         """
-
-        pass
+        # PACKING
+        format = "!h" + str(len(file_path_on_server)) + "sB5sB"
+        packing = pack(format, self.TftpPacketType.RRQ.value, bytes(file_path_on_server, "ascii"), 0,
+                       bytes("octet", "ascii"), 0)
+        return packing
 
     def upload_file(self, file_path_on_server):
         '''2 bytes string 1 byte string 1 byte
@@ -126,16 +129,12 @@ class TftpProcessor(object):
         accept is the file name. Remove this function if you're
         implementing a server.
         """
-        #PACKING
+        # PACKING
         format = "!h" + str(len(file_path_on_server)) + "sB5sB"
-        print(self.TftpPacketType.WRQ.value)
-        packing = pack(format, self.TftpPacketType.WRQ.value, bytes(file_path_on_server, "ascii"), 0, bytes("octet", "ascii"), 0)
-        print(packing)
+        packing = pack(format, self.TftpPacketType.WRQ.value, bytes(file_path_on_server, "ascii"), 0,
+                       bytes("octet", "ascii"), 0)
         return packing
 
-    def upload_data(self, file):
-
-        pass
 
     def write(self, server_packet):
         '''
@@ -146,7 +145,7 @@ class TftpProcessor(object):
         Figure 5-4: ERROR packet
         '''
         opcode = server_packet[:2]
-        unpacking = unpack("!h",opcode)
+        unpacking = unpack("!h", opcode)
         if unpacking[0] == 4:
             self.ack(server_packet)
             return 0
@@ -154,18 +153,17 @@ class TftpProcessor(object):
             self.error(server_packet)
             return 1
 
-
     def ack(self, server_packet):
         unpacking = unpack("!hh", server_packet)
         block_number = unpacking[1]
-        print(block_number)
+        print("block number = ", block_number)
         return block_number
 
     def error(self, server_packet):
         unpacking = unpack("!hh", server_packet[:4])
         if unpacking[2] == 0:
             print("Not defined, see error message (if any).")
-        elif  unpacking[2] == 1:
+        elif unpacking[2] == 1:
             print("File not found.")
         elif unpacking[2] == 2:
             print("Access violation.")
@@ -179,9 +177,9 @@ class TftpProcessor(object):
             print("File already exists.")
         elif unpacking[2] == 7:
             print("No such user.")
+
     def send(self, data):
         return self.parse(data)
-
 
     def parse(self, data):
         """
@@ -194,12 +192,9 @@ class TftpProcessor(object):
         :param data:
         :return:
         """
-        print(len(data))
         format = "!hh512s"
-        s = "sasidjedijoidjoisldnc svdcoinsvd njsvhilsn nsipojv sdnslj nijsdv nsfj njs sf lnsflkn lsn "
-        packing = pack(format,self.TftpPacketType.DATA.value, self.blocknumber, data)
-        print(packing)
-        print("block number = ", self.blocknumber)
+        packing = pack(format, self.TftpPacketType.DATA.value, self.blocknumber, data)
+        #print("block number = ", self.blocknumber)
         self.blocknumber = self.blocknumber + 1
         self.packet_buffer.append(packing)
 
@@ -219,9 +214,7 @@ def setup_sockets(address):
     class. It knows nothing about the sockets.
     Feel free to delete this function.
     """
-
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    client_socket.connect((address, 12345))
     print(client_socket)
     return client_socket
 
@@ -235,49 +228,63 @@ def do_socket_logic(address, operation, client_socket, file_name):
     #
     server_address = (address, 69)
     if operation == "push":
-        uploading = upload(address, operation, client_socket, file_name, server_address)
-        #client_socket.send(uploading, server_address)
-    # TFTP.UPLOAD()
-        client_socket.sendto(b"Hello", server_address)
-        server_packet = client_socket.recvfrom(516)
-        #print("[CLIENT] IN", server_packet)
-    elif operation == "pull":
-        download(address, client_socket, file_name, server_address)
-    pass
+        upload(address, operation, client_socket, file_name, server_address)
+    else:
+        download(address, operation, client_socket, file_name, server_address)
 
 
 def upload(address, operation, client_socket, file_name, server_address):
     tftp = TftpProcessor()
-    wrq=tftp.upload_file(file_name)
+    wrq = tftp.upload_file(file_name)
     client_socket.sendto(wrq, server_address)
-    print("[CLIENT] Done!")
     (server_packet, (add, p)) = client_socket.recvfrom(516)
+    print(server_packet)
     print("[CLIENT] IN", server_packet, p)
     print(add[1])
     port_add = (address, p)
+    print("[CLIENT] IN", server_packet)
+    print(add[1])
     uploading = tftp.write(server_packet)
     print(uploading)
-    file = []
     if uploading == 0:
-        file = open(file_name, "rb")
-        for chunk in iter(lambda: file.read(512), b''):
-            print(chunk)
-            print(len(chunk))
-            tftp.send(chunk)
-        while tftp.has_pending_packets_to_be_sent():
-            client_socket.sendto(tftp.get_next_output_packet(), port_add)
-            (packet, (address, port)) = client_socket.recvfrom(516)
-            print("[CLIENT] IN", packet, port)
+        try:
+            file = open(file_name, "rb")
+            for chunk in iter(lambda: file.read(512), b''):
+                tftp.send(chunk)
+            while tftp.has_pending_packets_to_be_sent():
+                client_socket.sendto(tftp.get_next_output_packet(), port_add)
+                try:
+                    (packet, (address, port)) = client_socket.recvfrom(516)
+                    tftp.write(packet)
+
+                except:
+                    client_socket.sendto(tftp.last, port_add)
+                    try:
+                        (packet, (address, port)) = client_socket.recvfrom(516)
+                        tftp.write(packet)
+                    except:
+                        print("Timeout")
+        except IOError:
+            print("File not accessible")
+            pass
+
     else:
         exit(-1)
+    tftp.blocknumber = 1
+    print("last", tftp.blocknumber)
 
 
-def download(address, operation, client_socket, file_name, server_address):
-    Tftp = TftpProcessor()
-    RRQ = Tftp.request_file(file_name)
-
-    pass
-
+def download (address, operation, client_socket, file_name, server_address):
+    tftp = TftpProcessor()
+    rrq = tftp.request_file(file_name)
+    client_socket.sendto(rrq, server_address)
+    (server_packet, (add, p)) = client_socket.recvfrom(516)
+    print(server_packet)
+    print("[CLIENT] IN", server_packet, p)
+    print(add[1])
+    port_add = (address, p)
+    print("[CLIENT] IN", server_packet)
+    print(add[1])
 
 def parse_user_input(address, operation, file_name=None):
     # Your socket logic can go here,
@@ -290,12 +297,10 @@ def parse_user_input(address, operation, file_name=None):
     client_socket = setup_sockets(address)
     if operation == "push":
         print(f"Attempting to upload [{file_name}]...")
-        do_socket_logic(address,operation, client_socket, file_name)
-        pass
+        do_socket_logic(address, operation, client_socket, file_name)
     elif operation == "pull":
-
         print(f"Attempting to download [{file_name}]...")
-        pass
+        do_socket_logic(address, operation, client_socket, file_name)
 
 
 def get_arg(param_index, default=None):
@@ -314,7 +319,7 @@ def get_arg(param_index, default=None):
         else:
             print(e)
             print(f"[FATAL] The comamnd-line argument #[{param_index}] is missing")
-            exit(-1)    # Program execution failed.
+            exit(-1)  # Program execution failed.
 
 
 def main():
@@ -332,8 +337,8 @@ def main():
     # will use.
     # The IP of the server, some default values
     # are provided. Feel free to modify them.
-    ip_address = get_arg(1, '127.0.0.1')
-    operation = get_arg(2, "push")
+    ip_address = get_arg(1, "127.0.0.1")
+    operation = get_arg(2, "pull")
     file_name = get_arg(3, "test.txt")
 
     # Modify this as needed.
@@ -342,4 +347,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
