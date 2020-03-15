@@ -109,6 +109,7 @@ class TftpProcessor(object):
         accept is the file name. Remove this function if you're
         implementing a server.
         """
+
         pass
 
     def upload_file(self, file_path_on_server):
@@ -194,7 +195,9 @@ def setup_sockets(address):
     class. It knows nothing about the sockets.
     Feel free to delete this function.
     """
+
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    client_socket.connect((address, 12345))
     print(client_socket)
     return client_socket
 
@@ -211,9 +214,11 @@ def do_socket_logic(address, operation, client_socket, file_name):
         uploading = upload(address, operation, client_socket, file_name, server_address)
         #client_socket.send(uploading, server_address)
     # TFTP.UPLOAD()
-    client_socket.sendto(b"Hello", server_address)
-    server_packet = client_socket.recvfrom(516)
-    #print("[CLIENT] IN", server_packet)
+        client_socket.sendto(b"Hello", server_address)
+        server_packet = client_socket.recvfrom(516)
+        #print("[CLIENT] IN", server_packet)
+    elif operation == "pull":
+        download(address, client_socket, file_name, server_address)
     pass
 
 
@@ -232,6 +237,13 @@ def upload(address, operation, client_socket, file_name, server_address):
         print(file)
         tftp.upload_data(file)
 
+def download(address, operation, client_socket, file_name, server_address):
+    Tftp = TftpProcessor()
+    RRQ = Tftp.request_file(file_name)
+
+    pass
+
+
 def parse_user_input(address, operation, file_name=None):
     # Your socket logic can go here,
     # you can surely add new functions
@@ -246,6 +258,7 @@ def parse_user_input(address, operation, file_name=None):
         do_socket_logic(address,operation, client_socket, file_name)
         pass
     elif operation == "pull":
+
         print(f"Attempting to download [{file_name}]...")
         pass
 
@@ -284,7 +297,7 @@ def main():
     # will use.
     # The IP of the server, some default values
     # are provided. Feel free to modify them.
-    ip_address = get_arg(1, "127.0.0.1")
+    ip_address = get_arg(1, '127.0.0.1')
     operation = get_arg(2, "push")
     file_name = get_arg(3, "test.txt")
 
