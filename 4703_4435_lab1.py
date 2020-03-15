@@ -135,7 +135,14 @@ class TftpProcessor(object):
                        bytes("octet", "ascii"), 0)
         return packing
 
-
+    def read(self, server_packet):
+        opcode = server_packet[:2]
+        unpacking = unpack("!h", opcode)
+        if unpacking[0] == 3:
+            return self.data(server_packet)
+        else:
+            self.error(server_packet)
+            return 0
     def write(self, server_packet):
         '''
         2 bytes 2 bytes string 1 byte
@@ -152,6 +159,17 @@ class TftpProcessor(object):
         else:
             self.error(server_packet)
             return 1
+
+
+    def data(self, server_packet):
+        unpacking = unpack("!hh512s", server_packet)
+        block_number = unpacking[1]
+        print("block number = ", block_number)
+        data = unpacking[2]
+        print(data)
+        self.packet_buffer.append(data)
+        print("block number = ", block_number)
+        return block_number
 
     def ack(self, server_packet):
         unpacking = unpack("!hh", server_packet)
@@ -177,7 +195,10 @@ class TftpProcessor(object):
             print("File already exists.")
         elif unpacking[2] == 7:
             print("No such user.")
-
+    def send_ack(self, blocknumber):
+        print(type(blocknumber))
+        packking = pack("!hh", self.TftpPacketType.ACK.value, blocknumber)
+        return  packking
     def send(self, data):
         return self.parse(data)
 
@@ -285,6 +306,13 @@ def download(address, operation, client_socket, file_name, server_address):
     port_add = (address, p)
     print("[CLIENT] IN", server_packet)
     print(add[1])
+    uploading = tftp.read(server_packet)
+    print(uploading)
+    if uploading > 0:
+         packed = tftp.send_ack(uploading)
+         client_socket.sendto(packed, server_address)
+         (packet, (address, port)) = client_socket.recvfrom(516)
+         print(packet)
 
 def parse_user_input(address, operation, file_name=None):
     # Your socket logic can go here,
