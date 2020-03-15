@@ -47,6 +47,7 @@ class TftpProcessor(object):
         """
         
         self.packet_buffer = []
+        self.blocknumber = 1
         pass
 
     def process_udp_packet(self, packet_data, packet_source):
@@ -177,6 +178,29 @@ class TftpProcessor(object):
             print("File already exists.")
         elif unpacking[2] == 7:
             print("No such user.")
+    def send(self, data):
+        return self.parse(data)
+
+
+    def parse(self, data):
+        """
+        2 bytes 2 bytes n bytes
+        ----------------------------------
+        | Opcode | Block # | Data |
+        ----------------------------------
+        Figure 5-2: DATA packet
+
+        :param data:
+        :return:
+        """
+        print(len(data))
+        format = "!hh512s"
+        s = "sasidjedijoidjoisldnc svdcoinsvd njsvhilsn nsipojv sdnslj nijsdv nsfj njs sf lnsflkn lsn "
+        packing = pack(format,self.TftpPacketType.DATA.value, self.blocknumber, data)
+        print(packing)
+        print("block number = ", self.blocknumber)
+        self.blocknumber = self.blocknumber + 1
+        self.packet_buffer.append(packing)
 
 
 def check_file_name():
@@ -222,15 +246,26 @@ def upload(address, operation, client_socket, file_name, server_address):
     wrq=tftp.upload_file(file_name)
     client_socket.sendto(wrq, server_address)
     print("[CLIENT] Done!")
-    server_packet , add= client_socket.recvfrom(516)
-    print("[CLIENT] IN", server_packet)
+    (server_packet, (add, p)) = client_socket.recvfrom(516)
+    print("[CLIENT] IN", server_packet, p)
     print(add[1])
+    port_add = (address, p)
     uploading = tftp.write(server_packet)
     print(uploading)
+    file = []
     if uploading == 0:
-        file = open(file_name, "rb").read()
-        print(file)
-        tftp.upload_data(file)
+        file = open(file_name, "rb")
+        for chunk in iter(lambda: file.read(512), b''):
+            print(chunk)
+            print(len(chunk))
+            tftp.send(chunk)
+        while tftp.has_pending_packets_to_be_sent():
+            client_socket.sendto(tftp.get_next_output_packet(), port_add)
+            (packet, (address, port)) = client_socket.recvfrom(516)
+            print("[CLIENT] IN", packet, port)
+    else:
+        exit(-1)
+
 
 def parse_user_input(address, operation, file_name=None):
     # Your socket logic can go here,
