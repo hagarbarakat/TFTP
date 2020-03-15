@@ -274,7 +274,7 @@ def upload(address, operation, client_socket, file_name, server_address):
     print("last", tftp.blocknumber)
 
 
-def download (address, operation, client_socket, file_name, server_address):
+def download(address, operation, client_socket, file_name, server_address):
     tftp = TftpProcessor()
     rrq = tftp.request_file(file_name)
     client_socket.sendto(rrq, server_address)
