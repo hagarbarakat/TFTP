@@ -61,28 +61,38 @@ class TftpProcessor(object):
         # feel free to remove this line
 
         print(f"Received a packet from {packet_source}")
-        in_packet = self._parse_udp_packet(packet_data)
-        out_packet = self._do_some_logic(in_packet)
+        uploading = self._parse_udp_packet(packet_data)
+        print(uploading)
+        if uploading != 0 and uploading[0] >0:
+            packing = self.packing_logic(packet_data, uploading)
+            self.packet_buffer.append(packing)
 
+        return uploading
         # This shouldn't change.
-        self.packet_buffer.append(out_packet)
 
-    def _parse_udp_packet(self, packet_bytes, ):
+    def _parse_udp_packet(self, packet_bytes):
         """
         You'll use the struct module here to determine
         the type of the packet and extract other available
         information.
         """
-        # pull // pack -> data, wrq // unpack -> acq
+        opcode = packet_bytes[:2]
+        unpacking = unpack("!h", opcode)
+        if unpacking[0] == 4:
+            self.ack(packet_bytes)
+            return 0
+        elif unpacking[0] == 3:
+            return self.data(packet_bytes)
+        else:
+            self.error(packet_bytes)
+            return -1
 
-        # PACK OR UNPACK
         pass
 
-    def _do_some_logic(self, input_packet):
-        """
-        Example of a private function that does some logic.
-        """
-        pass
+    def packing_logic(self,dataPacket,packetType):
+        if packetType[0] > 0:
+            return  self.send_ack(packetType[0]);
+
 
     def get_next_output_packet(self):
         """
@@ -265,7 +275,7 @@ def upload(address, operation, client_socket, file_name, server_address):
     port_add = (address, p)
     print("[CLIENT] IN", server_packet)
     print(add[1])
-    uploading = tftp.write(server_packet)
+    uploading = tftp.process_udp_packet(server_packet,port_add)
     print(uploading)
     if uploading == 0:
         try:
@@ -276,13 +286,12 @@ def upload(address, operation, client_socket, file_name, server_address):
                 client_socket.sendto(tftp.get_next_output_packet(), port_add)
                 try:
                     (packet, (address, port)) = client_socket.recvfrom(516)
-                    tftp.write(packet)
-
+                    tftp.process_udp_packet(packet)
                 except:
                     client_socket.sendto(tftp.last, port_add)
                     try:
                         (packet, (address, port)) = client_socket.recvfrom(516)
-                        tftp.write(packet)
+                        tftp.process_udp_packet(packet)
                     except:
                         print("Timeout")
         except IOError:
@@ -304,18 +313,18 @@ def download(address, operation, client_socket, file_name, server_address):
     print(len(server_packet))
     print("[CLIENT] IN", server_packet)
     print("[CLIENT] IN", server_packet)
-    uploading = tftp.read(server_packet)
+    uploading = tftp.process_udp_packet(server_packet, add)
     file = open("demofile2.txt", "ab")
     file.write(uploading[1])
     packed = tftp.send_ack(uploading[0])
     if uploading[0] > 0:
         while 1:
-            client_socket.sendto(packed, add)
+            client_socket.sendto(tftp.get_next_output_packet(), add)
             packet, address = client_socket.recvfrom(516)
             print(packet)
             if len(packet) < 516:
                 break
-            uploading = tftp.read(packet)
+            uploading = tftp.process_udp_packet(packet,add)
             file.write(uploading[1])
             packed = tftp.send_ack(uploading[0])
 
@@ -333,10 +342,10 @@ def parse_user_input(address, operation, file_name=None):
     client_socket = setup_sockets(address)
     if operation == "push":
         print(f"Attempting to upload [{file_name}]...")
-        do_socket_logic(address, operation, client_socket, file_name)
     elif operation == "pull":
         print(f"Attempting to download [{file_name}]...")
-        do_socket_logic(address, operation, client_socket, file_name)
+
+    do_socket_logic(address, operation, client_socket, file_name)
 
 
 def get_arg(param_index, default=None):
