@@ -67,7 +67,7 @@ class TftpProcessor(object):
         # This shouldn't change.
         self.packet_buffer.append(out_packet)
 
-    def _parse_udp_packet(self, packet_bytes, ):
+    def _parse_udp_packet(self, packet_byte):
         """
         You'll use the struct module here to determine
         the type of the packet and extract other available
