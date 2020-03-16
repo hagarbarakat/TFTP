@@ -147,31 +147,6 @@ class TftpProcessor(object):
                        bytes("octet", "ascii"), 0)
         return packing
 
-    def read(self, server_packet):
-        opcode = server_packet[:2]
-        unpacking = unpack("!h", opcode)
-        if unpacking[0] == 3:
-            return self.data(server_packet)
-        else:
-            self.error(server_packet)
-            return 0
-    def write(self, server_packet):
-        '''
-        2 bytes 2 bytes string 1 byte
-        -----------------------------------------
-        | Opcode | ErrorCode | ErrMsg | 0 |
-        -----------------------------------------
-        Figure 5-4: ERROR packet
-        '''
-        opcode = server_packet[:2]
-        unpacking = unpack("!h", opcode)
-        if unpacking[0] == 4:
-            self.ack(server_packet)
-            return 0
-        else:
-            self.error(server_packet)
-            return 1
-
     def data(self, server_packet):
         unpacking = unpack("!hh512s", server_packet)
         block_number = unpacking[1]
