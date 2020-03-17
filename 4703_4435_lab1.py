@@ -145,6 +145,7 @@ class TftpProcessor(object):
         else:
             self.error(server_packet)
             return 0
+
     def write(self, server_packet):
         '''
         2 bytes 2 bytes string 1 byte

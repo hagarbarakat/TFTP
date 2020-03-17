@@ -3,9 +3,7 @@ import sys
 import os
 import enum
 import socket
-from sys import argv
-import math
-import struct
+from struct import *
 
 
 class TftpProcessor(object):
@@ -13,20 +11,15 @@ class TftpProcessor(object):
     Implements logic for a TFTP client.
     The input to this object is a received UDP packet,
     the output is the packets to be written to the socket.
-
     This class MUST NOT know anything about the existing sockets
     its input and outputs are byte arrays ONLY.
-
     Store the output packets in a buffer (some list) in this class
-    the function get_next_output_packet returns the first item in
-    the packets to be sent.
-
+    the function get_next_output_packet **returns the first item in
+    the packets to be sent.**
     This class is also responsible for reading/writing files to the
     hard disk.
-
     Failing to comply with those requirements will invalidate
     your submission.
-
     Feel free to add more functions to this class as long as
     those functions don't interact with sockets nor inputs from
     user/sockets. For example, you can add functions that you
@@ -39,23 +32,25 @@ class TftpProcessor(object):
         Represents a TFTP packet type add the missing types here and
         modify the existing values as necessary.
         """
+        # read -> 1, write -> 2, data -> 3, ack -> 4, error -> 5
         RRQ = 1
         WRQ = 2
-        DAT = 3
+        DATA = 3
         ACK = 4
-        ERR = 5
+        ERROR = 5
 
     def __init__(self):
         """
-        Add and initialize the internal fields you need.
+        Add and initialize the *internal* fields you need.
         Do NOT change the arguments passed to this function.
-
         Here's an example of what you can do inside this function.
         """
+        self.blocknumber = 1
+        self.last = -1
         self.packet_buffer = []
         pass
 
-    def process_udp_packet(self, packet_data, packet_source, operation):
+    def process_udp_packet(self, packet_data, packet_source):
         """
         Parse the input packet, execute your logic according to that packet.
         packet data is a bytearray, packet source contains the address
@@ -65,98 +60,56 @@ class TftpProcessor(object):
         # add the packet to be sent to self.packet_buffer
         # feel free to remove this line
 
-        print(f"[TFTP] Received a packet from {packet_source}")
-        if operation == 'push':
-            response = self._parse_udp_packet(packet_data, operation)
-            opcode = response[0]
-            if opcode == 'ACK':
-                block_no = response[1]
-                print('[TFTP - Upload] Recieved packet type: ', opcode, ' Block #', block_no)
-                return opcode, block_no
-            elif opcode == 'ERR':
-                error_no = response[1]
-                error_msg = response[2]
-                print('[TFTP - Upload] Recieved packet type: ', opcode, ' Error Code #', error_no, ':', error_msg)
-                return opcode, error_no, error_msg
-            else:
-                print('[TFTP - Upload] Recieved undefined packet type')
-                return opcode
-        else:
-            response = self._parse_udp_packet(packet_data, operation)
-            opcode = response[0]
-            if opcode == 'DAT':
-                block_no = response[1]
-                data = response[2]
-                print('[TFTP - Download] Recieved packet type: ', opcode, ' Block #', block_no)
-                return opcode, block_no, data
-            # in_packet = self._parse_udp_packet(packet_data,operation)
-            # out_packet = self._do_some_logic(in_packet)
-
+        #print(f"Received a packet from {packet_source}")
+        uploading = self._parse_udp_packet(packet_data)
+        if uploading != 0 and uploading[0] >0:
+            packing = self.packing_logic(packet_data, uploading)
+            #print(packing)
             # This shouldn't change.
-            # self.packet_buffer.append(out_packet)
+            #self.packet_buffer.append(packing)
+        return uploading
 
-    def _parse_udp_packet(self, packet_bytes, operation):
+
+    def _parse_udp_packet(self, packet_bytes):
         """
         You'll use the struct module here to determine
         the type of the packet and extract other available
         information.
         """
-        if operation == 'push':
-            # Return the opcode of the response and other fields
-            no = struct.unpack('!h', packet_bytes[0:2])[0]
-            if no == 4:
-                no, block_no = struct.unpack('!hh', packet_bytes)
-                return 'ACK', block_no
-            elif no == 5:
-                error_no = struct.unpack('!h', packet_bytes[2:4])[0]
-                packet_len = len(packet_bytes)
-                error_msg = struct.unpack(str(packet_len - 5) + 's', packet_bytes[4:packet_len - 1])[0]
-                return 'ERR', error_no, error_msg.decode("ascii")
-            else:
-                return no, 'Undefined packet'
-        elif operation == 'pull':
-            # Return the opcode of the response and other fields
-            no = struct.unpack('!h', packet_bytes[0:2])[0]
-            if no == 3:
-                # no, block_no, buffer= struct.unpack('!hh512s', packet_bytes)
-                blocks = struct.unpack('!hh512s', packet_bytes)
-                block_no = blocks[1]
-                data = blocks[2]
-                #self.packet_buffer.append(data)
-                return 'DAT', block_no, data
-            elif no == 5:
-                error_no = struct.unpack('!h', packet_bytes[2:4])[0]
-                packet_len = len(packet_bytes)
-                error_msg = struct.unpack(str(packet_len - 5) + 's', packet_bytes[4:packet_len - 1])[0]
-                return 'ERR', error_no, error_msg.decode("ascii")
-            else:
-                return no, 'Undefined packet'
+        opcode = packet_bytes[:2]
+        unpacking = unpack("!h", opcode)
+        if unpacking[0] == 4:
+            self.ack(packet_bytes)
+            return 0
+        elif unpacking[0] == 3:
+            return self.data(packet_bytes)
+        else:
+            self.error(packet_bytes)
+            return -1
 
         pass
 
-    def _do_some_logic(self, input_packet):
-        """
-        Example of a private function that does some logic.
-        """
-        pass
+    def packing_logic(self,dataPacket,packetType):
+        if packetType[0] > 0:
+            print("packet type: ", packetType[0])
+            return  self.send_ack(packetType[0])
+
 
     def get_next_output_packet(self):
         """
         Returns the next packet that needs to be sent.
         This function returns a byetarray representing
         the next packet to be sent.
-
         For example;
         s_socket.send(tftp_processor.get_next_output_packet())
-
         Leave this function as is.
         """
-        return self.packet_buffer.pop(0)
+        self.last = self.packet_buffer.pop(0)
+        return self.last
 
     def has_pending_packets_to_be_sent(self):
         """
         Returns if any packets to be sent are available.
-
         Leave this function as is.
         """
         return len(self.packet_buffer) != 0
@@ -169,22 +122,20 @@ class TftpProcessor(object):
         accept is the file name. Remove this function if you're
         implementing a server.
         """
-        # pack packet in a struct
-        mode_bytes = bytearray('octet', 'ascii')
-        file_name_bytes = bytearray(file_path_on_server, 'ascii')
-        frmt = '!h' + str(len(file_name_bytes)) + 's' + '?' + str(len(mode_bytes)) + 's' + '?'
-        packet = struct.pack(frmt, 1, file_name_bytes, 0, mode_bytes, 0)
-        self.packet_buffer.append(packet)
+        # PACKING
+        format = "!h" + str(len(file_path_on_server)) + "sB5sB"
+        packing = pack(format, self.TftpPacketType.RRQ.value, bytes(file_path_on_server, "ascii"), 0,
+                       bytes("octet", "ascii"), 0)
+        return packing
 
-
-    def resend(self, packet):
-        self.packet_buffer.insert(0, packet)
-
-    def send_Ack(self, block_no):
-        print("block = ", block_no)
-        packet = struct.pack("!hh", self.TftpPacketType.ACK.value, block_no)
-        return packet
-    def upload_file(self, file_name):
+    def upload_file(self, file_path_on_server):
+        '''
+        2 bytes string 1 byte string 1 byte
+        --------------------------------------
+        | Opcode | Filename | 0 | Mode | 0 |
+        --------------------------------------
+        WRQ -> 02
+        '''
         """
         This method is only valid if you're implementing
         a TFTP client, since the client requests or uploads
@@ -192,34 +143,76 @@ class TftpProcessor(object):
         accept is the file name. Remove this function if you're
         implementing a server.
         """
-        try:
-            # Open file
-            f = open(file_name)
-            print('[TFTP - Upload] File opened succesfully')
-            # Read the file
-            file_content = f.read()
-        except IOError:
-            print("[TFTP - Upload] File not accessible")
-            exit(-1)  # Program execution failed.
+        # PACKING
+        format = "!h" + str(len(file_path_on_server)) + "sB5sB"
+        packing = pack(format, self.TftpPacketType.WRQ.value, bytes(file_path_on_server, "ascii"), 0,
+                       bytes("octet", "ascii"), 0)
+        return packing
 
-        no_packets = math.floor(1.0 * len(file_content) / 512)
-        mode_bytes = bytearray('octet', 'ascii')
-        file_name_bytes = bytearray(file_name, 'ascii')
-        # pack packet in a struct
-        frmt = '!h' + str(len(file_name_bytes)) + 's' + '?' + str(len(mode_bytes)) + 's' + '?'
-        packet = struct.pack(frmt, 2, file_name_bytes, 0, mode_bytes, 0)
-        self.packet_buffer.append(packet)
-        i = 0
+    def data(self, server_packet):
+        """
+        unpacking data, used for downloading
+        :param server_packet: received packet from server
+        :return: block number and data
+        """
+        unpacking = unpack("!hh512s", server_packet)
+        block_number = unpacking[1]
+        data = unpacking[2]
+        return block_number, data
 
-        for i in range(no_packets + 1):
-            start = i * 512
-            end = min(len(file_content), (i + 1) * 512)
-            frmt = '!hh' + str(end - start) + 's'
-            packet = struct.pack(frmt, 3, i + 1, bytearray(file_content[start:end], 'ascii'))
-            self.packet_buffer.append(packet)
+    def ack(self, server_packet):
+        """
+        unpacking acknowledgement, used for uploading
+        :param server_packet: received packet from server
+        :return: block number
+        """
+        unpacking = unpack("!hh", server_packet)
+        block_number = unpacking[1]
+        return block_number
 
-        print('[TFTP - Upload] to send ', len(self.packet_buffer))
-        pass
+    def error(self, server_packet):
+
+        unpacking = unpack("!hh", server_packet[:4])
+        if unpacking[2] == 0:
+            print("Not defined, see error message (if any).")
+        elif unpacking[2] == 1:
+            print("File not found.")
+        elif unpacking[2] == 2:
+            print("Access violation.")
+        elif unpacking[2] == 3:
+            print("Disk full or allocation exceeded.")
+        elif unpacking[2] == 4:
+            print("Illegal TFTP operation.")
+        elif unpacking[2] == 5:
+            print("Unknown transfer ID.")
+        elif unpacking[2] == 6:
+            print("File already exists.")
+        elif unpacking[2] == 7:
+            print("No such user.")
+
+    def send_ack(self, blocknumber):
+        """
+        pack acknowledgement to send it to server while downloading
+        :param block number: block number to be sent to server while sending acknowledgement
+        """
+        pack("!hh", self.TftpPacketType.ACK.value, blocknumber)
+
+    def send(self, data):
+        return self.parse(data)
+
+    def parse(self, data):
+        """
+        2 bytes 2 bytes n bytes
+        ----------------------------------
+        | Opcode | Block # | Data |
+        ----------------------------------
+        Figure 5-2: DATA packet
+        :param data: packing data packet to be sent to server while uploading
+        """
+        format = "!hh512s"
+        packing = pack(format, self.TftpPacketType.DATA.value, self.blocknumber, data)
+        self.blocknumber = self.blocknumber + 1
+        self.packet_buffer.append(packing)
 
 
 def check_file_name():
@@ -231,138 +224,95 @@ def check_file_name():
     pass
 
 
-def setup_sockets():
+def setup_sockets(address):
     """
     Socket logic MUST NOT be written in the TftpProcessor
     class. It knows nothing about the sockets.
-
     Feel free to delete this function.
     """
-    # Create client socket
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # Address is the local host : The TFTP port
+    print(client_socket)
     return client_socket
 
 
-def do_socket_logic(tftp, sock, address, operation):
+def do_socket_logic(address, operation, client_socket, file_name):
     """
     Example function for some helper logic, in case you
     want to be tidy and avoid stuffing the main function.
-
     Feel free to delete this function.
     """
+    #
+    server_address = (address, 69)
     if operation == "push":
-        # Send WRQ
-        print('[UDP] Send WRQ...')
-        WRQ = tftp.get_next_output_packet()
-        # Recieve response from server
-        try:
-            sock.sendto(WRQ, address)
-            response, tftp_address = sock.recvfrom(2096)
-        except socket.error:
-            try:
-                # Resend one more time
-                sock.sendto(WRQ, address)
-                response, tftp_address = sock.recvfrom(2096)
-            except socket.error:
-                # Terminate
-                print('[UDP - Upload] Timeout - No response from server')
-                exit(-1)
-            pass
-        # Pass the response to the TFTP processor
-        tftp_response = tftp.process_udp_packet(response, tftp_address, operation)
-        response_type = tftp_response[0]
-        if response_type != 'ACK':
-            return
-
-        curr_block_id = 0
-        while tftp.has_pending_packets_to_be_sent():
-            packet = tftp.get_next_output_packet()
-            curr_block_id += 1
-            try:
-                print('[UDP - Upload] Send block no  ', curr_block_id, ' of length ', len(packet))
-                sock.sendto(packet, tftp_address)
-                response, new_tftp_address = sock.recvfrom(2096)
-            except socket.error:
-                try:
-                    # Resend one more time
-                    print('[UDP - Upload] Resend block no  ', curr_block_id)
-                    sock.sendto(packet, tftp_address)
-                    response, new_tftp_address = sock.recvfrom(2096)
-                except socket.error:
-                    # Terminate
-                    print('[UDP - Upload] Timeout - Lost connection with server')
-                    exit(-1)
-
-            if new_tftp_address != tftp_address:
-                print('[UDP - Upload] Recieved wrong packet !')
-                curr_block_id -= 1
-                tftp.resend(packet)
-            else:
-                tftp_response = tftp.process_udp_packet(response, tftp_address, operation)
-                response_type = tftp_response[0]
-                if response_type != 'ACK':
-                    break
-                if curr_block_id != tftp_response[1]:
-                    curr_block_id -= 1
-                    tftp.resend(packet)
+        upload(address, operation, client_socket, file_name, server_address)
     else:
-        print('[UDP] Send RRQ...')
-        RRQ = tftp.get_next_output_packet()
-        # Recieve response from server
+        download(address, operation, client_socket, file_name, server_address)
+
+
+def upload(address, operation, client_socket, file_name, server_address):
+    tftp = TftpProcessor()
+    wrq = tftp.upload_file(file_name)
+    print("[Upload] sending write request")
+    client_socket.sendto(wrq, server_address)
+    (server_packet, (add, p)) = client_socket.recvfrom(516)
+    print("[Upload] ACK: ", server_packet)
+    print("[Upload] address", p)
+    port_add = (address, p)
+    uploading = tftp.process_udp_packet(server_packet, port_add)
+    print("[Upload] sending data ...")
+    if uploading == 0:
         try:
-            sock.sendto(RRQ, address)
-            response, tftp_address = sock.recvfrom(2096)  # data block 1 initially or error
-            r = response.decode()
-            print("response:  ", r)
-        except socket.error:
-            try:
-                # Resend one more time
-                sock.sendto(RRQ, address)
-                response, tftp_address = sock.recvfrom(2096)
-            except socket.error:
-                # Terminate
-                print('[UDP - Download] Timeout - No response from server')
-                exit(-1)
+            file = open(file_name, "rb")
+            for chunk in iter(lambda: file.read(512), b''):
+                tftp.send(chunk)
 
-        # Pass the response to the TFTP processor
-        tftp_response, block_no, data = tftp.process_udp_packet(response, tftp_address, operation)
-        f = open("yarabb.txt", "ab")
-        f.write(data)
-        response_type = tftp_response
-        print(response_type)
-        if response_type != 'DAT':
-            return
-        print("omar")
-        packet = tftp.send_Ack(block_no)
-        print("packet = ",packet)
-        while 1:
-            #packet = tftp.send_Ack(tftp_response[1])
-            try:
-                print('[UDP - Download] Send block no  ', block_no)
-                sock.sendto(packet, tftp_address)
-                response, new_tftp_address = sock.recvfrom(516)
-            except socket.error:
+
+            while tftp.has_pending_packets_to_be_sent():
+                client_socket.sendto(tftp.get_next_output_packet(), port_add)
                 try:
-                    # Resend one more time
-                    print('[UDP - Upload] Resend block no  ', block_no)
-                    sock.sendto(packet, tftp_address)
-                    response, new_tftp_address = sock.recvfrom(516)
+                    (packet, address) = client_socket.recvfrom(516)
+                    block = tftp.process_udp_packet(packet, address)
                 except socket.error:
-                    # Terminate
-                    print('[UDP - Upload] Timeout - Lost connection with server')
-                    exit(-1)
-            print(response)
-            if len(response) < 516:
+                    client_socket.sendto(tftp.last, port_add)
+                    try:
+                        (packet, address) = client_socket.recvfrom(516)
+                        block = tftp.process_udp_packet(packet, address)
+                    except socket.error:
+                        print("[Upload] timeout")
+                        exit(-1)
+        except IOError:
+            print("File not accessible")
+            pass
+    else:
+        exit(-1)
+    tftp.blocknumber = 1
+    print("[Upload] file uploaded successfully")
+
+
+def download(address, operation, client_socket, file_name, server_address):
+    tftp = TftpProcessor()
+    rrq = tftp.request_file(file_name)
+    client_socket.sendto(rrq, server_address)
+    (server_packet, add) = client_socket.recvfrom(516)
+    print("[Download] data:", server_packet)
+    print("[Download] address", add)
+    uploading = tftp.process_udp_packet(server_packet, add)
+    file = open("demofile.txt", "ab")
+    file.write(uploading[1])
+    tftp.send_ack(uploading[0])
+    print("[Download] sending ACK with block number ", uploading[0])
+    if uploading[0] > 0:
+        while 1:
+            client_socket.sendto(tftp.get_next_output_packet(), add)
+            packet, address = client_socket.recvfrom(516)
+            if len(packet) < 516:
+                print("[Download] finished.")
                 break
-            tftp_response, block_no, data = tftp.process_udp_packet(response, tftp_address, operation)
-            f.write(data)
-            packet = tftp.send_Ack(block_no)
-            print(tftp_response)
-
-
-
-pass
+            print("Downloading data ...")
+            uploading = tftp.process_udp_packet(packet,add)
+            file.write(uploading[1])
+            tftp.send_ack(uploading[0])
+            print("[Download] sending ACK with block number ", uploading[0])
 
 
 def parse_user_input(address, operation, file_name=None):
@@ -372,48 +322,31 @@ def parse_user_input(address, operation, file_name=None):
     # But don't add socket code in the TftpProcessor class.
     # Feel free to delete this code as long as the
     # functionality is preserved.
+    client_socket = setup_sockets(address)
     if operation == "push":
         print(f"Attempting to upload [{file_name}]...")
-        # Set up client socket
-        server_address = (address, 69)
-        client_socket = setup_sockets()
-        # Create TFTP Packet
-        tftp = TftpProcessor()
-        # Prepare all packets
-        tftp.upload_file(file_name)
-        # Upload
-        do_socket_logic(tftp, client_socket, server_address, operation)
-
     elif operation == "pull":
-        # Set up client socket
-        server_address = (address, 69)
-        client_socket = setup_sockets()
-        # Create TFTP Packet
-        tftp = TftpProcessor()
-        # Prepare all packets
-        tftp.request_file(file_name)
-        # Download
         print(f"Attempting to download [{file_name}]...")
-        do_socket_logic(tftp, client_socket, server_address, operation)
+
+    do_socket_logic(address, operation, client_socket, file_name)
 
 
 def get_arg(param_index, default=None):
     """
         Gets a command line argument by index (note: index starts from 1)
         If the argument is not supplies, it tries to use a default value.
-
         If a default value isn't supplied, an error message is printed
         and terminates the program.
     """
     try:
+        print(sys.argv[param_index])
         return sys.argv[param_index]
     except IndexError as e:
         if default:
             return default
         else:
             print(e)
-            print(
-                f"[FATAL] The comamnd-line argument #[{param_index}] is missing")
+            print(f"[FATAL] The comamnd-line argument #[{param_index}] is missing")
             exit(-1)  # Program execution failed.
 
 
@@ -433,8 +366,8 @@ def main():
     # The IP of the server, some default values
     # are provided. Feel free to modify them.
     ip_address = get_arg(1, "127.0.0.1")
-    operation = get_arg(2, "pull")
-    file_name = get_arg(3, "test.txt")
+    operation = get_arg(2, "push")
+    file_name = get_arg(3, "demofile.txt")
 
     # Modify this as needed.
     parse_user_input(ip_address, operation, file_name)
