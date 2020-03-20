@@ -276,6 +276,7 @@ def upload(address, operation, client_socket, file_name, server_address):
     if ret[1] == 1:
         while tftp.has_pending_packets_to_be_sent():
             client_socket.sendto(tftp.get_next_output_packet(), port_add)
+            client_socket.settimeout(5)
             try:
                 (packet, address) = client_socket.recvfrom(516)
                 print("[Upload] Ack: ", packet)
@@ -304,7 +305,7 @@ def download(address, operation, client_socket, file_name, server_address):
     print("[Download] data:", server_packet)
     print("[Download] address", add)
     uploading = tftp.process_udp_packet(server_packet, add)
-    file = open("test152.txt", "ab")
+    file = open("test1235.txt", "ab")
     file.truncate(0)
     if len(tftp.file) != 0:
         file.write(tftp.file.pop(0))
@@ -315,17 +316,36 @@ def download(address, operation, client_socket, file_name, server_address):
         while 1:
             if tftp.has_pending_packets_to_be_sent():
                 client_socket.sendto(tftp.get_next_output_packet(), add)
-                packet, address = client_socket.recvfrom(516)
-                if len(packet) < 516:
-                    print("[Download] finished.")
-                    break
-                print("Downloading data ...")
-                uploading = tftp.process_udp_packet(packet, add)
-                if len(tftp.file) != 0:
-                    file.write(tftp.file.pop(0))
-                else:
-                    print("[Download]: No data")
-                print("[Download] sending ACK with block number ", uploading[0])
+                client_socket.settimeout(5)
+                try:
+                    packet, address = client_socket.recvfrom(516)
+                    if len(packet) < 516:
+                        print("[Download] finished.")
+                        break
+                    print("Downloading data ...")
+                    uploading = tftp.process_udp_packet(packet, add)
+                    if len(tftp.file) != 0:
+                        file.write(tftp.file.pop(0))
+                    else:
+                        print("[Download]: No data")
+                    print("[Download] sending ACK with block number ", uploading[0])
+                except socket.error:
+                    client_socket.sendto(tftp.get_next_output_packet(), add)
+                    try:
+                        packet, address = client_socket.recvfrom(516)
+                        if len(packet) < 516:
+                            print("[Download] finished.")
+                            break
+                        print("Downloading data ...")
+                        uploading = tftp.process_udp_packet(packet, add)
+                        if len(tftp.file) != 0:
+                            file.write(tftp.file.pop(0))
+                        else:
+                            print("[Download]: No data")
+                        print("[Download] sending ACK with block number ", uploading[0])
+                    except socket.error:
+                        print("[Download] timeout")
+                        exit(-1)
 
 
 def parse_user_input(address, operation, file_name=None):
@@ -380,7 +400,7 @@ def main():
     # are provided. Feel free to modify them.
     ip_address = get_arg(1, "127.0.0.1")
     operation = get_arg(2, "pull")
-    file_name = get_arg(3, "test12.txt")
+    file_name = get_arg(3, "test152.txt")
 
     # Modify this as needed.
     parse_user_input(ip_address, operation, file_name)
